@@ -1,0 +1,162 @@
+---
+title: "Descriptiva Dataset Tumor Wilms"
+author: "Juan López Ariza"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Este documento se va a utilizar para realizar una descriptiva básica del dataset que contiene información sobre pacientes del tumor de Wilms. El objetivo es sacar información como la mediana de edad, el número de ersonas que tienen mutaciones, cantidad de gente que ha fallecido y que lo ha hehco por el tumor...
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Cargar las librerías necesarias
+library(dplyr)
+library(readr)
+library(tidyverse)
+library(skimr)
+library(ggplot2)
+library(janitor)
+
+# Cargar el dataset
+data <- read_tsv("wt_target_2018_pub_clinical_data.tsv")
+
+# Vista general como primera aproximación a los datos
+skim(data)
+
+# En primer lugar debemos asegurarnos de que no existen pacientes duplicados en el dataset, consultando el ID de paciente:
+#Comprobamos si hay IDs duplicados
+duplicated_ids <- data %>%
+  group_by(`Patient ID`) %>%
+  filter(n() > 1)
+if(nrow(duplicated_ids) == 0) {
+  print("No hay IDs duplicados")
+} else {
+  print("Hay IDs duplicados")
+  print(duplicated_ids)
+}
+```
+
+Hay 5 pacientes que aparecen en dos ocasiones y que, por tanto, deberíamos eliminar. Eliminamos la primera aparición pues es la que tiene mutaciones a su nombre.
+
+```{r}
+#Eliminar duplicados manteniendo la primera aparición
+data <- distinct(data, `Patient ID`, .keep_all = TRUE)
+#Pasamos de nuevo el script para comprobar que no hay duplicados
+duplicated_ids <- data %>%
+  group_by(`Patient ID`) %>%
+  filter(n() > 1)
+if(nrow(duplicated_ids) == 0) {
+  print("No hay IDs duplicados")
+} else {
+  print("Hay IDs duplicados")
+  print(duplicated_ids)
+}
+```
+
+
+Una vez eliminados los datos duplicados, podemos realizar un análisis concienzudo de los datos.
+
+```{r}
+#Estudio de edad en diagnóstico
+data %>%
+  summarise(
+    media = mean(`Diagnosis Age`, na.rm = TRUE),
+    mediana = median(`Diagnosis Age`, na.rm = TRUE),
+    rango = max(`Diagnosis Age`, na.rm = TRUE) - min(`Diagnosis Age`, na.rm = TRUE),
+    sd = sd(`Diagnosis Age`, na.rm = TRUE)
+  )
+
+#Creamos gráfica
+ggplot(data, aes(x = `Diagnosis Age`)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(title = "Distribución de edad al diagnóstico (años)")
+
+
+```
+Vemos como la gran mayoría de pacientes diagnosticados son niños de unos cinco años, puede diagnosticarse antes de esta edad pero conforme crecen, cada vez es menos común, habiendo algun caso aislado de diagnóstico a los 15 años.
+
+
+Respecto al género y la raza:
+```{r}
+#Tabla de frecuencias y porcentajes de sexo y raza
+data %>%
+  tabyl(Sex) %>%            #Tablas de frecuencia
+  adorn_pct_formatting()    #Añade porcentaje a los datos
+
+data %>%
+  tabyl(`Race Category`) %>%
+  adorn_pct_formatting()
+
+#Gráfica de barras para sexo y raza
+ggplot(data, aes(x = Sex, fill = `Race Category`)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Distribución por sexo y raza")
+```
+Observamos que hay más pacientes mujeres que varones y que la gran mayoría de los pacientes son de raza blanca, seguidos de los afroamericanos.
+
+\newpage
+
+Estadio tumoral:
+```{r}
+#Tabla de frecuencias y porcentajes de estadio tumoral
+data %>%
+  tabyl(`Neoplasm American Joint Committee on Cancer Clinical Group Stage`) %>%
+  adorn_pct_formatting()
+
+```
+En cuanto a la carga mutacional y las alteeraciones genéticas medimos el Tumoral Mutational Burden, es decir, el número de mutaciones en el ADN de un tumor:
+```{r}
+#Medidas de tendencia central y dispersión para TMB, Mutation Count y Fraction Genome Altered
+data %>%
+  summarise(
+    mean_TMB = mean(`TMB (nonsynonymous)`, na.rm = TRUE),
+    median_TMB = median(`TMB (nonsynonymous)`, na.rm = TRUE),
+    mean_mutations = mean(`Mutation Count`, na.rm = TRUE),
+    mean_fraction_altered = mean(`Fraction Genome Altered`, na.rm = TRUE)
+  )
+
+#Gráfica de densidad para TMB
+ggplot(data, aes(x = `TMB (nonsynonymous)`)) +
+  geom_density(fill = "orange", alpha = 0.5) +
+  labs(title = "Distribución del Tumor Mutation Burden (TMB)")
+```
+Observamos con esta gráfica que, en general, existe poca carga mutagénica en los pacientes de este dataset.
+
+Medimos la cantidad de pacientes que tiene mutaciones o no:
+```{r}
+library(tidyverse)
+
+# Clasificar
+data <- data %>%
+  mutate(
+    mutation_status = case_when(
+      is.na(`Mutation Count`) ~ "Datos no disponibles",
+      `Mutation Count` > 0 ~ "Con mutaciones",
+      TRUE ~ "Sin mutaciones"
+    )
+  )
+
+# Conteo
+data %>%
+  count(mutation_status) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+```
+Confirmamos que la mayoría de pacientes no presentan mutaciones, aunque hay unos 100 individuos cn los que podemos trabajar.
+
+Finalmente, en cuanto a la supervivencia y el estado del paciente:
+```{r}
+  tabyl(data, `Overall Survival Status`) %>%
+  adorn_pct_formatting()
+
+summary(data$`Overall Survival (Months)`)
+
+ggplot(data, aes(x = `Overall Survival (Months)`)) +
+  geom_histogram(fill = "lightcoral", color = "black") +
+  labs(title = "Distribución de la supervivencia global (meses)")
+
+```
+
+Observamos que la mayoría de pacientes están vivos al final del estudio y que la mediana de supervivencia es de 71 meses, es decir, unos 6 años. Si analizamos la gráfica de análisis de supervivencia vemos que no se sigue una tendencia normal, muriendo una cantidad considerable de pacientes antes de los 4 años de enfermedad.
