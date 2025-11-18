@@ -1,11 +1,12 @@
 ---
 title: "Descriptiva Dataset Tumor Wilms"
-author: "Juan López Ariza"
+author: "Author Name"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Este documento se va a utilizar para realizar una descriptiva básica del dataset que contiene información sobre pacientes del tumor de Wilms. El objetivo es sacar información como la mediana de edad, el número de ersonas que tienen mutaciones, cantidad de gente que ha fallecido y que lo ha hehco por el tumor...
+Este documento se va a utilizar para realizar una descriptiva básica del dataset que contiene información sobre pacientes del tumor de Wilms. El objetivo es sacar información como la mediana de edad, el número de personas que tienen mutaciones, cantidad de gente que ha fallecido y que lo ha hecho por el tumor...
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -21,7 +22,7 @@ library(ggplot2)
 library(janitor)
 
 # Cargar el dataset
-data <- read_tsv("wt_target_2018_pub_clinical_data.tsv")
+data <- read_tsv("C:/Users/MiPC/OneDrive/Escritorio/TFM/1_dataset/wt_target_2018_pub_clinical_data.tsv")
 
 # Vista general como primera aproximación a los datos
 skim(data)
@@ -160,3 +161,47 @@ ggplot(data, aes(x = `Overall Survival (Months)`)) +
 ```
 
 Observamos que la mayoría de pacientes están vivos al final del estudio y que la mediana de supervivencia es de 71 meses, es decir, unos 6 años. Si analizamos la gráfica de análisis de supervivencia vemos que no se sigue una tendencia normal, muriendo una cantidad considerable de pacientes antes de los 4 años de enfermedad.
+
+Creamos una tabla descriptiva de los pacientes con variables categóricas como el porcentaje de sexos, mediana, mínimos y máximos de edad. Mediana de fracción de genoma alterado, estado del paciente y número de mutaciones por paciente. También porcentaje con cada tipo de clasificacion histologica
+```{r}
+
+library(dplyr)
+library(tidyr)
+
+# Reemplazar NA en variables necesarias para que cuenten como 0 en porcentajes
+data_clean <- data %>%
+  mutate(
+    Mutation_Count_noNA = ifelse(is.na(`Mutation Count`), 0, `Mutation Count`),
+    Sex_noNA = ifelse(is.na(Sex), NA, Sex),
+    Survival_Status_noNA = ifelse(is.na(`Overall Survival Status`), NA, `Overall Survival Status`)
+  )
+
+#Cálculo del resumen general
+resumen_general <- data.frame(
+  mediana_edad = median(data$`Diagnosis Age`, na.rm = TRUE),
+  min_edad = min(data$`Diagnosis Age`, na.rm = TRUE),
+  max_edad = max(data$`Diagnosis Age`, na.rm = TRUE),
+  media_fraction_genoma_alterado = mean(ifelse(is.na(data$`Fraction Genome Altered`), 0, data$`Fraction Genome Altered`)),
+  porcentaje_con_mutaciones = mean(data_clean$Mutation_Count_noNA > 0) * 100,
+  porcentaje_vivos = mean(data_clean$Survival_Status_noNA == "0:LIVING", na.rm = TRUE) * 100,
+  media_numero_mutaciones = mean(data_clean$Mutation_Count_noNA),
+  porcentaje_mujeres = mean(data_clean$Sex_noNA == "Female", na.rm = TRUE) * 100,
+  porcentaje_hombres = mean(data_clean$Sex_noNA == "Male", na.rm = TRUE) * 100,
+  mediana_tiempo_supervivencia_meses = median(data$`Overall Survival (Months)`, na.rm = TRUE)
+)
+
+#Cálculo de porcentajes por clasificación histológica
+tabla_histologia <- data %>%
+  group_by(`Histology Classification in Primary Tumor`) %>%
+  summarise(porcentaje = n() / nrow(data) * 100) %>%
+  pivot_wider(
+    names_from = `Histology Classification in Primary Tumor`,
+    values_from = porcentaje
+  )
+
+#Unir ambas tablas en una sola fila
+descriptiva <- bind_cols(resumen_general, tabla_histologia)
+
+#Exportar a fcihero
+write.csv(descriptiva, "descriptiva_dataset_wilms.csv", row.names = FALSE)
+```
