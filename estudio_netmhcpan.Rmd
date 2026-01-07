@@ -1,0 +1,397 @@
+---
+title: "Estudio NetMHCPan"
+author: "Juan López Ariza"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Estudiamos los ficheros xls generados de NetMHCPan para ver la afinidad de los péptidos de 17 aminoácidos con diferentes alelos de MHC clase I.
+```{r, message=FALSE}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+#Leemos los ficheros
+fichero_wt <- read_excel("wt_NetMHCpan.xlsx", col_names = FALSE)
+fichero_mt <- read_excel("mut_NetMHCpan.xlsx", col_names = FALSE)
+
+```
+
+Estos criterios no son los utilizados por NETMHCPAN por lo que pasamos a considerarn tan solo el rango EL RANK para definir SB y WB, si este es < 0.5% o < 2% respectivamente.
+
+Se evitan los gráficos debdido a que el alto número de pacientes imposibilita la visualización adecuada.
+
+El fichero tiene un error de formato, por lo que juntamos los diferentes valores de la primera fila con los de la segunda.
+```{r}
+#Función para limpiar encabezado
+#La función toma un dataframe
+limpiar_datos <- function(fichero) {
+  #Extraemos alelos y nombres(Primera y segunda fila)
+  alelos <- as.character(fichero[1,])
+  nombres_base <- as.character(fichero[2,])
+  
+  #Combinamos alelo y nombre usando separador "_", si alelo está vacío solo usamos el nombre
+  nombres <- mapply(function(alelo, nombre) {
+    if (is.na(alelo) | alelo == "") {
+      return(nombre)
+    } else {
+      return(paste(alelo, nombre, sep = "_"))
+    }
+  }, alelos, nombres_base, SIMPLIFY = TRUE)
+  
+  #Asignamos nombres y eliminamos los encabezados inservibles
+  colnames(fichero) <- nombres
+  fichero <- fichero[-c(1,2), ]
+  
+  return(fichero)
+}
+
+#Aplicamos limpieza
+fichero_wt <- limpiar_datos(fichero_wt)
+fichero_mt <- limpiar_datos(fichero_mt)
+```
+
+Una vez realizado este cambio podemos realizar un análisis de los datos sobre todo para asegurar la integridad de los encabezados.
+```{r}
+#Realizamos un breve vistazo a los datos wild type
+head(fichero_wt)
+
+#Y a los datos mutados
+head(fichero_mt)
+```
+Clasificamos binders según SB o WB
+```{r}
+#Función que clasifica según binder
+clasificar_binder <- function(el_rank) {
+  #Nos aseguramos de que sean valores numéricos
+  el <- as.numeric(el_rank)
+  
+  #Clasificamos según el umbral estándar
+  if ( is.na(el)) {
+    return("NB")  # No Binder
+  } else if (el < 0.5) {
+    return("SB")  # Strong Binder
+  } else if (el < 2) {
+    return("WB")  # Weak Binder
+  } else {
+    return("NB")  # No Binder
+  }
+}
+```
+
+
+
+Analizamos todos los péptidos
+
+## ANALIZAR POR MUTACIón NO POR P´PETIDO
+
+## SI un péptido tiene más de un SB O WB SIMPLEMENTE DECIR QUE SIRVE COMO SB Y WB 
+```{r}
+
+#Extraer tipo HLA de los nombres de columna (sin número de alelo)
+tipos_hla <- unique(gsub(":.*", "", gsub("_.*", "", names(fichero_mt)[grep("HLA-", names(fichero_mt))])))
+
+#Dataframe vacío para almacenar resultados
+resultados <- data.frame()
+
+#Iteramos sobre cada péptido, separando por paciente y contando binders
+for (i in 1:nrow(fichero_mt)) {
+  paciente <- gsub("_.*", "", fichero_mt$ID[i])
+  peptido <- fichero_mt$Peptide[i]
+  
+  #Listas vacías y contadores para contar por tipo de HLA
+  sb_count <- 0
+  wb_count <- 0
+  tipos_sb <- c()
+  tipos_wb <- c()
+  
+  for (tipo in tipos_hla) {
+    #Buscar columnas el col de este tipo HLA
+    el_col <- grep(paste0(tipo, ".*_EL_Rank"), names(fichero_mt), value = TRUE)[1]
+    
+    if (!is.na(el_col)) {
+      clase <- clasificar_binder(fichero_mt[i, el_col])
+      
+      if (clase == "SB") {
+        sb_count <- sb_count + 1
+        tipos_sb <- c(tipos_sb, tipo)
+      } else if (clase == "WB") {
+        wb_count <- wb_count + 1
+        tipos_wb <- c(tipos_wb, tipo)
+      }
+    }
+  }
+  
+  #Clasificamos el péptido si existen las columnas, priorizando SB
+  if (sb_count > 0) {
+    categoria <- "Neoantígeno (SB)"
+  } else if (wb_count > 0) {
+    categoria <- "Neoantígeno (WB)"
+  } else {
+    categoria <- "No Binder"
+  }
+ 
+  #Lista de resultados con péptido, número de binders, tipo de estos y categoría, se añade al dataframe
+  resultados <- rbind(resultados, data.frame(
+    Paciente = paciente,
+    Peptido = peptido,
+    SB = sb_count,
+    WB = wb_count,
+    Total_binders = sb_count + wb_count,
+    Categoria = categoria,
+    Tipos_SB = ifelse(length(tipos_sb) > 0, paste(tipos_sb, collapse = ", "), ""),
+    Tipos_WB = ifelse(length(tipos_wb) > 0, paste(tipos_wb, collapse = ", "), "")
+  ))
+}
+
+print(head(resultados, 20))
+
+#Pasamos los resultados a un archivo CSV para su análisis posterior
+write.csv(resultados, "resultados_neoantigenos.csv", row.names = FALSE)
+```
+Creamos un código que exporte los péptidos con algun neoantígeno (SB o WB) a un archivo CSV para su análisis posterior.
+```{r}
+# ============================================================
+# PASO 4: FILTRAR NEOANTÍGENOS Y CREAR FASTA
+# ============================================================
+
+# Filtrar solo péptidos con al menos un SB o WB
+neoantígenos <- resultados %>%
+  filter(Total_binders > 0) %>%
+  distinct(Peptido, .keep_all = TRUE)  # Eliminar duplicados de péptido
+
+# Crear archivo FASTA
+crear_fasta <- function(dataframe, archivo_salida) {
+  # Abrir archivo para escritura
+  conexion <- file(archivo_salida, "w")
+  
+  # Iterar sobre cada neoantígeno
+  for (i in 1:nrow(dataframe)) {
+    # Crear encabezado FASTA con información del péptido
+    encabezado <- paste0(">",
+                         dataframe$Peptido[i],
+                         "|Paciente:", dataframe$Paciente[i],
+                         "|SB:", dataframe$SB[i],
+                         "|WB:", dataframe$WB[i],
+                         "|Tipo:", dataframe$Categoria[i])
+    
+    # Escribir encabezado y secuencia
+    writeLines(encabezado, conexion)
+    writeLines(dataframe$Peptido[i], conexion)
+  }
+  
+  close(conexion)
+  cat(paste("Archivo FASTA creado:", archivo_salida, "\n"))
+}
+
+# Exportar a FASTA
+crear_fasta(neoantígenos, "neoantígenos.fasta")
+```
+
+
+
+
+
+Función para obtener resumen por cada paciente. Agrupamos resultados por paciente y contamos péptidos totales.
+```{r}
+resumen_pacientes <- resultados %>%
+  group_by(Paciente) %>%
+  summarise(
+    Total_peptidos = n(),
+    Con_SB = sum(SB > 0),
+    Con_WB = sum(WB > 0 & SB == 0),
+    Sin_binders = sum(Total_binders == 0)
+  )
+
+```
+
+
+
+
+Estudio de pacientes por el número de neoantígenos. Total de neoantígenos por paciente y ordena de mayor a menor.
+```{r}
+library(tidyverse)
+
+#Creamos un ranking de pacientes para ver los más interesantes de estudaiar
+ranking_pacientes <- resumen_pacientes %>%
+  mutate(Total_neoantígenos = Con_SB + Con_WB) %>%
+  arrange(desc(Total_neoantígenos))
+
+#Pasar ranking a CSV
+write.csv(ranking_pacientes, "ranking_pacientes_neoantigenos.csv", row.names = FALSE)
+
+#Vemos el top 5
+head(ranking_pacientes, 5)
+
+#Estadísticas básicas
+cat("\n========== ESTADÍSTICAS BÁSICAS DE NEOANTÍGENOS POR PACIENTE ==========\n")
+cat(paste("Número total de pacientes:", nrow(ranking_pacientes), "\n"))
+cat(paste("Número total de neoantígenos identificados:", sum(ranking_pacientes$Total_neoantígenos), "\n"))
+cat(paste("Número promedio de neoantígenos por paciente:", round(mean(ranking_pacientes$Total_neoantígenos), 2), "\n"))
+cat(paste("Mediana de neoantígenos por paciente:", median(ranking_pacientes$Total_neoantígenos), "\n"))
+cat(paste("Máximo de neoantígenos en un paciente:", max(ranking_pacientes$Total_neoantígenos), "\n"))
+cat(paste("Mínimo de neoantígenos en un paciente:", min(ranking_pacientes$Total_neoantígenos), "\n"))
+cat(paste("Mediana de SB por paciente:", median(ranking_pacientes$Con_SB), "\n"))
+cat(paste("Mediana de WB por paciente:", median(ranking_pacientes$Con_WB), "\n"))
+cat(paste("Número promedio de péptidos por paciente:", round(mean(ranking_pacientes$Total_peptidos), 2), "\n"))
+cat(paste("Numero promedio de neoantígenos por péptido:", round(mean(ranking_pacientes$Total_neoantígenos / ranking_pacientes$Total_peptidos), 4), "\n"))
+
+
+neoantigenos <- read.csv("ranking_pacientes_neoantigenos.csv")
+
+# Convertir Paciente a numérico
+neoantigenos$Paciente <- as.numeric(neoantigenos$Paciente)
+
+# Calcular ratio de calidad (SB / Total_neoantigenos)
+neoantigenos <- neoantigenos %>%
+  mutate(
+    Ratio_SB_Neoantigen = Con_SB / Total_neoantígenos,
+    Ratio_SB_Total = Con_SB / Total_peptidos,
+    Categoria = case_when(
+      Total_neoantígenos >= 50 ~ "Alto",
+      Total_neoantígenos >= 20 ~ "Medio",
+      Total_neoantígenos >= 10 ~ "Bajo",
+      TRUE ~ "Muy bajo"
+    )
+  )
+
+ggplot(neoantigenos, aes(x = Total_peptidos, y = Con_SB, 
+                         size = Total_neoantígenos, 
+                         color = Total_neoantígenos)) +
+  geom_point(alpha = 0.6) +
+  scale_color_gradient(low = "blue", high = "red") +
+  labs(title = "Relación entre péptidos analizados y neoantígenos SB por paciente",
+       x = "Número de péptidos analizados",
+       y = "Número de neoantígenos SB",
+       size = "Total de neoantígenos",
+       color = "Total de neoantígenos") +
+  theme_minimal()
+```
+
+Estudiamos la distribución or tipo de HLA:
+```{r}
+#Creamos tabla de binders por tipo HLA
+#Descompone listas de tipos HLA en filas individuales
+#Una entrada por cada tipo que actúa como binder
+distribucion_hla <- data.frame()
+
+for (i in 1:nrow(resultados)) {
+  if (resultados$Tipos_SB[i] != "") {
+    tipos <- strsplit(resultados$Tipos_SB[i], ", ")[[1]]
+    for (tipo in tipos) {
+      distribucion_hla <- rbind(distribucion_hla, data.frame(
+        Tipo_HLA = tipo,
+        Clase = "SB"
+      ))
+    }
+  }
+  
+  if (resultados$Tipos_WB[i] != "") {
+    tipos <- strsplit(resultados$Tipos_WB[i], ", ")[[1]]
+    for (tipo in tipos) {
+      distribucion_hla <- rbind(distribucion_hla, data.frame(
+        Tipo_HLA = tipo,
+        Clase = "WB"
+      ))
+    }
+  }
+}
+
+# Contar por tipo HLA
+conteo_hla <- distribucion_hla %>%
+  group_by(Tipo_HLA, Clase) %>%
+  summarise(Cantidad = n(), .groups = "drop") %>%
+  arrange(desc(Cantidad))
+
+cat("\n========== BINDERS POR TIPO HLA ==========\n")
+print(conteo_hla)
+```
+
+
+
+Resumen Final
+```{r}
+cat("\n========== RESUMEN ==========\n\n")
+
+cat("PÉPTIDOS:\n")
+cat(paste("  - Total analizados:", nrow(resultados), "\n"))
+cat(paste("  - Con Strong Binders (SB):", sum(resultados$SB > 0), "\n"))
+cat(paste("  - Con Weak Binders (WB):", sum(resultados$WB > 0 & resultados$SB == 0), "\n"))
+cat(paste("  - Sin binders:", sum(resultados$Total_binders == 0), "\n\n"))
+
+cat("PACIENTES:\n")
+cat(paste("  - Total:", n_distinct(resultados$Paciente), "\n"))
+cat(paste("  - Con neoantígenos SB:", 
+          n_distinct(resultados$Paciente[resultados$SB > 0]), "\n"))
+cat(paste("  - Con neoantígenos WB:", 
+          n_distinct(resultados$Paciente[resultados$WB > 0 & resultados$SB == 0]), "\n\n"))
+
+cat("TIPOS HLA MÁS REACTIVOS (Top 5):\n")
+top_hla <- conteo_hla %>%
+  group_by(Tipo_HLA) %>%
+  summarise(Total = sum(Cantidad)) %>%
+  arrange(desc(Total)) %>%
+  head(5)
+print(top_hla)
+```
+
+Visualizamos los datos de los 20 mejores candidatos, ordenando por el número de SB.
+```{r}
+mejores_candidatos <- resultados %>%
+  filter(SB > 0) %>%
+  arrange(desc(SB), desc(WB))
+
+cat("\n========== MEJORES CANDIDATOS (con SB) ==========\n")
+print(head(mejores_candidatos, 20))
+```
+
+
+Gráfica que representa total de péptidos y cuántos de ellos son SB, WB o no binders.
+```{r}
+# Resumen de péptidos por categoría
+resumen_peptidos <- resultados %>%
+  group_by(Categoria) %>%
+  summarise(Conteo = n())
+# Gráfico de barras
+ggplot(resumen_peptidos, aes(x = Categoria, y = Conteo, fill
+= Categoria)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribución de Péptidos por Categoría",
+       x = "Categoría",
+       y = "Número de Péptidos") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+Resumen con pacientes según la categoría de sus neoantigneos
+```{r}
+# Resumen de pacientes por categoría
+resumen_pacientes_categoria <- resumen_pacientes %>%
+  mutate(
+    Categoria = case_when(
+      Con_SB > 0 ~ "Con SB",
+      Con_WB > 0 ~ "Con WB",
+      TRUE ~ "Sin Binders"
+    )
+  ) %>%
+  group_by(Categoria) %>%
+  summarise(Conteo = n())
+
+# Gráfico de barras
+ggplot(resumen_pacientes_categoria, aes(x = Categoria, y = Conteo, fill = Categoria)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Distribución de Pacientes por Categoría de Neoantígenos",
+       x = "Categoría",
+       y = "Número de Pacientes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
