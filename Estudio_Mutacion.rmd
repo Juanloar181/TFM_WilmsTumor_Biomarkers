@@ -1,6 +1,6 @@
 ---
-title: "Mutation Studio"
-author: "Author Name"
+title: "Estudio Mutaciones"
+author: "Juan López Ariza"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -9,6 +9,35 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Realizamos en primer lugar un breve aálisis que permita ver los tipos de cada una de las mutaciones presentes en el fichero de mutaciones. Posteriormente, extraemos los péptidos neoantigénicos derivados de las mutaciones missense presentes en los datos, generando un fichero fasta con los péptidos mutados y otro con los péptidos wild-type correspondientes.
+```{r}
+library(readr)
+library(dplyr)
+
+#Cargar datos
+mutations <- read_tsv("data_mutations.txt")
+
+clinical_sample <- read_tsv("data_clinical_sample.txt", comment="#")
+
+#Contar tipos de mutaciones
+mutation_counts <- mutations %>%
+  group_by(Variant_Classification) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+print(mutation_counts)
+
+#Gráfica de barras de tipos de mutaciones
+library(ggplot2)
+ggplot(mutation_counts, aes(x = reorder(Variant_Classification, -count), y = count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Tipos de Mutaciones en el Dataset",
+       x = "Tipo de Mutación",
+       y = "Número de Mutaciones") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
 ```{r}
 library(readr)
 library(dplyr)
@@ -16,11 +45,6 @@ library(Biostrings)
 library(stringr)
 library(biomaRt)
 
-
-#Cargar datos
-mutations <- read_tsv("data_mutations.txt")
-
-clinical_sample <- read_tsv("data_clinical_sample.txt", comment="#")
 
 mutations_con_paciente <- mutations %>%
   left_join(clinical_sample, by = c("Tumor_Sample_Barcode" = "SAMPLE_ID"))
@@ -125,6 +149,9 @@ if (nrow(isoformas) == 0) {
   next
   }
   
+
+  
+  
   #Validar posición aminoácido
   if (pos_aa > length(prot_seq)) {
     errores <- rbind(errores, data.frame(
@@ -152,12 +179,30 @@ if (nrow(isoformas) == 0) {
   mut_protein <- prot_seq
   mut_protein[pos_aa] <- mut_aa
   
+
+  
   #Extraer péptidos 17 aa centrados en la mutación
   pep_wt <- extraer_peptido_proteina(prot_seq, pos_aa, window=8)
   pep_mut <- extraer_peptido_proteina(mut_protein, pos_aa, window=8)
   
+    # Verificar que ambos péptidos tengan exactamente 17 aminoácidos
+longitud_pep_mut <- length(pep_mut)
+
+  
+  if (longitud_pep_mut != 17) {
+    errores <- rbind(errores, data.frame(
+      ID_mutacion = i,
+      Gen = mut$Hugo_Symbol,
+      Paciente = mut$num_paciente,
+      Mensaje = paste("Péptido mutado con longitud distinta a 17 aa: longitud actual =", 
+                      longitud_pep_mut, "aa"),
+      stringsAsFactors = FALSE
+    ))
+    next
+  }
+  
   #Crear nombres para fasta
-nombre <- paste0(mut$num_paciente, "_", mut$Hugo_Symbol, "_", hgvsp)
+nombre <- paste0(mut$num_paciente, "_",  hgvsp, "_", mut$Hugo_Symbol)
   
   #Agregar a listas separadas
 lista_peptidos_wt <- c(lista_peptidos_wt, AAStringSet(pep_wt))
@@ -180,3 +225,16 @@ writeXStringSet(lista_peptidos_mut, "peptidos_mutados.fasta")
 if (nrow(errores) > 0) {
   write.csv(errores, "errores_aa.csv", row.names = FALSE)
 }
+
+
+```
+
+Realizamos un breve análisis en el que vemos la posible repetición de mutaciones para encontrar neoantígenos públicos.
+```{r}
+#Contar repeticiones de mutaciones
+mutacion_counts <- missense_muts %>%
+  group_by(HGVSp_Short) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+print(mutacion_counts)
+```
