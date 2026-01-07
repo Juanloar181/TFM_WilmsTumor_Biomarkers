@@ -189,6 +189,4 @@ hla_counts <- resultados %>%
   arrange(desc(n))
 
 hla_counts
-
-
 ```
