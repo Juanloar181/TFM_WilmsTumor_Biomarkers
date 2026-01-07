@@ -1,21 +1,31 @@
 ---
-title: "Estudios Estadísticos y Análisis Supervivencia"
+title: "Análisis estadístico, de Supervivencia e Impacto Clínico"
 author: "Juan López Ariza"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  html_document:
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Cargo un fichero que conecta los datos clínicos con lo que disponemos sobre neoantígenos.
-```{r}
-read.csv("tabla_completa_clinica_neoantigenos.csv") -> pacientes_con_neoantigenos
-head(pacientes_con_neoantigenos,10)
-```
-Previamente debemos comprobar normalidad y homocestacidad de las variables. Podemos utilizar Shapiro-Wilk para normalidad y Levene para homocedasticidad. Estas son las opciones más robustas y generamente más usadas. 
-```{r}
+Estudios estadísticos:
+
+```{r, warning=FALSE}
+#CARGA DE LIBRERÍAS
+library(car)
+library(arsenal)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+
+
+#Carga fichero
+read.csv("data/tabla_completa_clinica_neoantigenos.csv") -> pacientes_con_neoantigenos
+
+
 #Creamos lista de las variables numéricas
 variables_numericas <- c(
   "Diagnosis.Age",
@@ -45,13 +55,9 @@ for (var in variables_numericas) {
   ))
 }
 
-print("RESULTADOS DE NORMALIDAD")
+
 print(resultados_normalidad)
-print("Interpretación: p-value > 0.05 → Distribución Normal")
-```
-Estudiamos ahora la homocestacidad, esdecir, si las varianzas son iguales entre los grupos. Usamos Levene's Test para ello.:
-```{r}
-library(car)
+
 
 #Variable de estratificación principal
 variable_grupo <- "Overall.Survival.Status"
@@ -73,18 +79,9 @@ for (var in variables_numericas) {
 }
 
 
-print("RESULTADOS DE HOMOCEDASTICIDAD (Levene's Test)")
 print(resultados_homocedasticidad)
-print("Interpretación: p-value > 0.05 → Varianzas Homogéneas")
 
-```
-
-Vemos que hemos unido los dos ficheros de interés para este priemr análisis en el que vamos a estudiar la correlación de neoantígenos con algunas variables clínicas.
-```{r}
-library(arsenal)
-library(dplyr)
-
-# Convertimos a factores
+#Convertimos a factores
 pacientes_con_neoantigenos <- pacientes_con_neoantigenos %>%
   mutate(
     tiene_datos_neoant = factor(tiene_datos_neoant, 
@@ -100,7 +97,7 @@ pacientes_con_neoantigenos <- pacientes_con_neoantigenos %>%
     Patient.Death.Reason = factor(Patient.Death.Reason)
   )
 
-# Creamos etiquetas personalizadas traducidas
+#Creamos etiquetas personalizadas traducidas
 attr(pacientes_con_neoantigenos$Diagnosis.Age, "label") <- "Edad al diagnóstico (años)"
 attr(pacientes_con_neoantigenos$Sex, "label") <- "Sexo"
 attr(pacientes_con_neoantigenos$Mutation.Count, "label") <- "Número de mutaciones"
@@ -138,7 +135,7 @@ ctrl_categorical <- tableby.control(
   total = TRUE
 )
 
-# Variables numéricas vs total neoantígenos
+#Variables numéricas vs total neoantígenos
 tabla_numericas <- tableby(
   tiene_datos_neoant ~ 
     Diagnosis.Age +
@@ -163,10 +160,8 @@ tabla_categoricas <- tableby(
 
 summary(tabla_categoricas, text = TRUE)
 
-```
-Gráfica de barras para las variables categóricas que resultaron significativas (histología y estadio ajcc).
-```{r}
-library(ggplot2)
+
+#Gráfica de barras para las variables categóricas que resultaron significativas 
 
 # Calcular chi-cuadrado
 contingency_table <- table(pacientes_con_neoantigenos$Histology.Classification.in.Primary.Tumor,
@@ -189,14 +184,8 @@ ggplot(pacientes_con_neoantigenos,
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
-```
 
-
-Ya que tableby() no acepta correlaciones de Pearson como test, realizo una gráfica aparte en la que se observa R2 y el p-valor.
-```{r}
-library(ggplot2)
-
-# Gráfico 1: Edad
+#Gráfico 1: Edad
 test_edad <- wilcox.test(pacientes_con_neoantigenos$Diagnosis.Age ~ pacientes_con_neoantigenos$tiene_datos_neoant)
 
 ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = Diagnosis.Age, fill = tiene_datos_neoant)) +
@@ -206,7 +195,7 @@ ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = Diagnosis.Age
   theme_minimal() +
   theme(legend.position = "none")
 
-# Gráfico 2: TMB
+#Gráfico 2: TMB
 test_tmb <- wilcox.test(pacientes_con_neoantigenos$TMB..nonsynonymous. ~ pacientes_con_neoantigenos$tiene_datos_neoant)
 
 ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = TMB..nonsynonymous., fill = tiene_datos_neoant)) +
@@ -216,11 +205,8 @@ ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = TMB..nonsynon
   theme_minimal() +
   theme(legend.position = "none")
 
-```
-```{r}
-library(ggplot2)
 
-# Gráfico 1: Edad (dispersión)
+#Gráfico 1: Edad (dispersión)
 test1 <- cor.test(pacientes_con_neoantigenos$Diagnosis.Age, 
                   pacientes_con_neoantigenos$Total_neoantigenos, 
                   method = "spearman")
@@ -238,7 +224,7 @@ ggplot(plot_data1, aes(x = x, y = y)) +
                       as.numeric(test1$estimate), test1$p.value)) +
   theme_minimal()
 
-# Gráfico 2: TMB (dispersión)
+#Gráfico 2: TMB (dispersión)
 test2 <- cor.test(pacientes_con_neoantigenos$TMB..nonsynonymous., 
                   pacientes_con_neoantigenos$Total_neoantigenos, 
                   method = "spearman")
@@ -257,15 +243,7 @@ ggplot(plot_data2, aes(x = x, y = y)) +
   theme_minimal()
 
 
-  
-```
 
-
-
-Conociendo las variables significativas en función de la presencia o no de neoantígenos (edad, supervivencia global e histología), podemos graficarlas y observar la diferencia entre ambs grupos.
-```{r}
-library(ggplot2)
-library(ggpubr)
 
 #Estudio de Edad según presencia de neoantígenos
 ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = Diagnosis.Age)) +
@@ -278,13 +256,13 @@ ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = Diagnosis.Age
   stat_compare_means(method = "wilcox.test", label.y = max(pacientes_con_neoantigenos$Diagnosis.Age) + 5)
 
 #Estudio de Histología según presencia de neoantígenos
-# Calcula el test chi-cuadrado antes de graficar
+# Calculo de test chi-cuadrado antes de graficar
 chi_test <- chisq.test(
   pacientes_con_neoantigenos$Histology.Classification.in.Primary.Tumor,
   pacientes_con_neoantigenos$tiene_datos_neoant
 )
 
-# Crea el gráfico
+
 ggplot(pacientes_con_neoantigenos, 
        aes(x = Histology.Classification.in.Primary.Tumor, 
            fill = tiene_datos_neoant)) +
@@ -298,10 +276,7 @@ ggplot(pacientes_con_neoantigenos,
   theme_minimal()
 ```
 
-
-En este último hay solo un paciente con histología mixed, podría omitirse. En lo demás, tanto en edad como en supervivencia global, se observan diferencias significativas entre ambos grupos.
-
-Ahora sí, realizamos el análisis de supervivencia propiamente dicho utilizando el paquete survival()
+Análisis de supervivencia
 ```{r}
 #Cargamos paquetes
 library(survival)
@@ -310,27 +285,26 @@ library(ggplot2)
 library(ggpubr)
 
 
-# CREACIÓN DE OBJETOS DE SUPERVIVENCIA
+#CREACIÓN DE OBJETOS DE SUPERVIVENCIA
 
 
-# Convertimos factores a numéricos para el análisis de supervivencia
-#Extrae el primer digito pasando solo a numérico
+#Convertir factores a numéricos
 pacientes_con_neoantigenos$status_numeric <- as.numeric(
   sub("^([0-9]).*", "\\1", as.character(pacientes_con_neoantigenos$Overall.Survival.Status))
 )
 
-# Creamos el objeto de supervivencia, núcleo del análisis
+#Se crea el objeto de supervivencia, núcleo del análisis
 surv_object <- Surv(
   time = pacientes_con_neoantigenos$Overall.Survival..Months.,
   event = pacientes_con_neoantigenos$status_numeric
 )
 
 
-# DETERMINACIÓN DEL PUNTO DE CORTE ÓPTIMO (surv_cutpoint)
+#DETERMINACIÓN DEL PUNTO DE CORTE ÓPTIMO (surv_cutpoint)
 
 
 #Identificar el mejor punto de corte para variables continuas
-#Definimos las variables continuas de interés
+#Variables continuas de interés
 variables_continuas <- c("TMB..nonsynonymous.", "Mutation.Count", "Total_neoantigenos")
 
 #Prueba todos los valores posibles para encontrar el punto de corte óptimo
@@ -348,14 +322,14 @@ print(summary(res_cutpoint))
 
  
 
-# Categorizar variables según los puntos de corte óptimos
+#Categorizar variables según los puntos de corte óptimos
 #Dataframe donde se añaden columnas low o high, convirtiendo en variables binarias
 pacientes_categorizado <- surv_categorize(res_cutpoint)
 
 print("Datos categorizado según puntos de corte óptimos:")
 head(pacientes_categorizado)
 
-#Creo variable categórica basada en Total_neoantigenos
+#Creación de variable categórica basada en Total_neoantigenos
 pacientes_con_neoantigenos$neoantígenos_categoria <- cut(
   pacientes_con_neoantigenos$Total_neoantigenos,
   breaks = c(-Inf, 0, 1, Inf),           # Puntos de corte
@@ -363,52 +337,37 @@ pacientes_con_neoantigenos$neoantígenos_categoria <- cut(
   right = TRUE                           # Incluir límite izquierdo
 )
 
-#Convertimos a factor
+#Paso a factor
 pacientes_con_neoantigenos$neoantígenos_categoria <- factor(
   pacientes_con_neoantigenos$neoantígenos_categoria
 )
 
 
-# ESTIMADORES KAPLAN-MEIER
+#ESTIMADORES KAPLAN-MEIER
 
-# Estratificado por Neoantígenos
-
-print("KAPLAN-MEIER POR NEOANTÍGENOS")
-
-
+#Estratificado por Neoantígenos
 km_neoantigenos <- survfit(surv_object ~ tiene_datos_neoant, 
                              data = pacientes_con_neoantigenos)
 
-
-print(km_neoantigenos)
-print(summary(km_neoantigenos))
-
 #Estratificado por categoria de neoantigenos
-print("KAPLAN-MEIER POR CATEGORÍA DE NEOANTÍGENOS (0, 1 ,2+)")
 
  km_neoant_categorizado <- survfit(
   Surv(Overall.Survival..Months., status_numeric) ~ neoantígenos_categoria,
   data = pacientes_con_neoantigenos
 )
 
-print(km_neoant_categorizado)
-print(summary(km_neoant_categorizado))
 
-
-# KAPLAN-MEIER CON PUNTOS DE CORTE ÓPTIMOS (usando ggsurvplot)
-
-print("KAPLAN-MEIER CON PUNTOS DE CORTE ÓPTIMOS")
+#KAPLAN-MEIER CON PUNTOS DE CORTE ÓPTIMOS (usando ggsurvplot)
 #Usa dataframe categorizado con low y high
 
-# Total de neoantígenos con punto de corte óptimo
+#Total de neoantígenos con punto de corte óptimo
 km_neoantigenos_optimal <- survfit(Surv(Overall.Survival..Months., status_numeric) ~ Total_neoantigenos,
                                    data = pacientes_categorizado)
 
 
-# GRÁFICOS KAPLAN-MEIER CON ggsurvplot 
+#GRÁFICOS KAPLAN-MEIER CON ggsurvplot 
 
   #Gráfico 1: Por Neoantígenos
-  pdf("km_neoantigenos.pdf", width = 10, height = 6)
   ggsurvplot(km_neoantigenos,
              title = "Curva de Supervivencia por Presencia de Neoantígenos",
              xlab = "Tiempo (meses)",
@@ -421,12 +380,10 @@ km_neoantigenos_optimal <- survfit(Surv(Overall.Survival..Months., status_numeri
              pval = TRUE,
              pval.coord = c(130, 0.15),
              legend.labs = levels(pacientes_con_neoantigenos$tiene_datos_neoant))
-  dev.off()
 
 
 
 # Gráfico 2: Total de Neoantígenos con punto de corte óptimo
-pdf("km_neoantigenos_optimal.pdf", width = 10, height = 6)
 ggsurvplot(km_neoantigenos_optimal,
            title = "Curva de Supervivencia por Total de Neoantígenos (Punto de Corte Óptimo)",
            xlab = "Tiempo (meses)",
@@ -440,11 +397,9 @@ ggsurvplot(km_neoantigenos_optimal,
            break.time.by = 20,                             # Intervalo en X
            pval = TRUE,                                    # Mostrar p-value
            pval.coord = c(130, 0.15))                      # Posición p-value
-dev.off()
 
 
 #Grafico 3: Categoria de neoantígenos (0, 1, 2+)
-pdf("km_neoantígenos_categorizado.pdf", width = 12, height = 7)
 ggsurvplot(km_neoant_categorizado,
            title = "Curva de Supervivencia por Categoría de Neoantígenos (0, 1, 2+)",
            xlab = "Tiempo (meses)",
@@ -458,18 +413,11 @@ ggsurvplot(km_neoant_categorizado,
            break.time.by = 20,                             # Intervalo en X
            pval = TRUE,                                    # Mostrar p-value
            pval.coord = c(130, 0.15))                      # Posición p-value
-dev.off()
 
 
-# TESTS LOG-RANK (Comparación entre grupos)
+#TESTS LOG-RANK (Comparación entre grupos)
 
-
-
-
-print("TESTS LOG-RANK")
-
-
-# Test Log-Rank: Neoantígenos
+#Test Log-Rank: Neoantígenos
 print("TEST LOG-RANK: CON vs SIN NEOANTÍGENOS")
 
 #survdiff realiza el test de log-rank
@@ -484,8 +432,7 @@ if (logrank_neoantigenos$pvalue < 0.05) {
 }
 
 
-# Test Log-Rank: Total Neoantígenos (con punto de corte óptimo)
-print("TEST LOG-RANK: TOTAL DE NEOANTÍGENOS (PUNTO DE CORTE ÓPTIMO)")
+#Test Log-Rank: Total Neoantígenos (con punto de corte óptimo)
 
 logrank_neoantigenos_opt <- survdiff(Surv(Overall.Survival..Months., status_numeric) ~ Total_neoantigenos,
                                       data = pacientes_categorizado)
@@ -497,7 +444,6 @@ if (logrank_neoantigenos_opt$pvalue < 0.05) {
 }
 
 #Test Log-Rank: Categoría de neoantigenos
-print("TEST LOG-RANK: CATEGORÍA DE NEOANTÍGENOS (0, 1, 2+)")
 logrank_neoantigenos_categorizado <- survdiff(Surv(Overall.Survival..Months., status_numeric) ~ neoantígenos_categoria,
                                                data = pacientes_con_neoantigenos)
 print(logrank_neoantigenos_categorizado)
@@ -507,15 +453,10 @@ if (logrank_neoantigenos_categorizado$pvalue < 0.05) {
   print("RESULTADO: No hay diferencia significativa (p ≥ 0.05)")
 }
 
-# ============================================================================
-# RESUMEN FINAL
-# ============================================================================
 
 
-print("RESUMEN FINAL DEL ANÁLISIS DE SUPERVIVENCIA")
 
-
-# Crear tabla resumen
+#Crear tabla resumen
 resumen_final <- data.frame(
   Comparacion = c(
     "Neoantígenos (Presencia)",
@@ -541,11 +482,6 @@ resumen_final <- data.frame(
 
 print(resumen_final)
 
-# Guardar tabla
-write.csv(resumen_final, "resumen_logrank_tests.csv", row.names = FALSE)
-print("Tabla resumen guardada: resumen_logrank_tests.csv")
-
-print("ANÁLISIS DE SUPERVIVENCIA COMPLETADO")
 
 ```
-Nos quedamos simplemente con el que muestra neoantígenos sí o no.
+

@@ -1,0 +1,141 @@
+---
+title: "Análisis de motivos"
+author: "Juan López Ariza"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Análisis de motivos.
+```{r}
+library(dplyr)
+
+#Lectura de fasta
+leer_fasta <- function(archivo) {
+  lineas <- readLines(archivo)
+  es_header <- grepl("^>", lineas)
+  headers <- gsub("^>", "", lineas[es_header])
+  secuencias <- lineas[!es_header]
+  
+  data.frame(
+    header = headers,
+    secuencia = secuencias,
+    stringsAsFactors = FALSE
+  )
+}
+
+neoantígenos <- leer_fasta("output/neoantigenos.fasta")
+
+cat("Neoantígenos cargados:", nrow(neoantígenos), "\n\n")
+
+#Extracción de k-mers con tracking
+
+extraer_kmers_con_source <- function(secuencia, header, k) {
+  longitud <- nchar(secuencia)
+  kmers <- c()
+  
+  if (longitud >= k) {
+    for (i in 1:(longitud - k + 1)) {
+      kmer <- substr(secuencia, i, i + k - 1)
+      kmers <- c(kmers, kmer)
+    }
+  }
+  
+  data.frame(
+    Motivo = kmers,
+    Neoantígeno = header,
+    Secuencia_completa = secuencia,
+    K = k,
+    stringsAsFactors = FALSE
+  )
+}
+
+#Analizar para 6, 7 y 8 aa
+for (k in 6:8) {
+  cat(sprintf("========== MOTIVOS DE %d AMINOÁCIDOS ==========\n\n", k))
+  
+  #Extraer todos los k-mers
+  kmers_data <- data.frame()
+  for (i in 1:nrow(neoantígenos)) {
+    temp <- extraer_kmers_con_source(neoantígenos$secuencia[i], 
+                                      neoantígenos$header[i], k)
+    kmers_data <- rbind(kmers_data, temp)
+  }
+  
+  #Contar frecuencias
+  motivos_freq <- kmers_data %>%
+    group_by(Motivo) %>%
+    summarise(
+      Frecuencia = n(),
+      N_neoantígenos_únicos = n_distinct(Neoantígeno),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(Frecuencia))
+  
+  #Estadísticas
+  cat(sprintf("Total fragmentos: %d\n", nrow(kmers_data)))
+  cat(sprintf("Fragmentos únicos: %d\n", nrow(motivos_freq)))
+  cat(sprintf("Fragmentos repetidos (freq > 1): %d\n\n", 
+              sum(motivos_freq$Frecuencia > 1)))
+  
+  #TOP 15 MOTIVOS
+  cat(sprintf("=== TOP 15 MOTIVOS DE %d AA ===\n\n", k))
+  
+  for (idx in 1:min(15, nrow(motivos_freq))) {
+    motivo <- motivos_freq$Motivo[idx]
+    freq <- motivos_freq$Frecuencia[idx]
+    n_pep <- motivos_freq$N_neoantígenos_únicos[idx]
+    
+    neos_con_motivo <- unique(kmers_data$Neoantígeno[kmers_data$Motivo == motivo])
+    
+    cat(sprintf("%2d. Motivo: %s | Freq: %d | Neoantígenos: %d\n", 
+                idx, motivo, freq, n_pep))
+    
+    for (neo in neos_con_motivo) {
+      cat(sprintf("    └─ %s\n", neo))
+    }
+    cat("\n")
+  }
+  
+}
+
+```
+
+Repetición de mutaciones.
+```{r, warnings=FALSE, message=FALSE}
+#Cargar archivo de mutaciones
+mutaciones <- read_tsv("data/data_mutations.txt")
+# Contar mutaciones repetidas
+mutaciones_freq <- mutaciones %>%
+  group_by(Hugo_Symbol, HGVSp_Short) %>%
+  summarise(Frecuencia = n(), .groups = 'drop') %>%
+  filter(Frecuencia > 1) %>%
+  arrange(desc(Frecuencia))
+
+cat(sprintf("Total de mutaciones únicas: %d\n", n_distinct(paste(mutaciones$Hugo_Symbol, mutaciones$HGVSp_Short))))
+cat(sprintf("Mutaciones que se repiten: %d\n\n", nrow(mutaciones_freq)))
+
+for (i in 1:nrow(mutaciones_freq)) {
+  cat(sprintf("%2d. %s | %s | Repetida %d veces\n",
+              i,
+              mutaciones_freq$Hugo_Symbol[i],
+              mutaciones_freq$HGVSp_Short[i],
+              mutaciones_freq$Frecuencia[i]))
+}
+```
+
+Creación de logo de secuencias.
+```{r, warnings=FALSE, message=FALSE}
+#Carga de librería
+library(ggseqlogo)
+
+#Creamos logo
+ggseqlogo(neoantígenos$secuencia, method = 'probability') +
+  ggtitle("Logo de secuencias de neoantígenos") +
+  theme_minimal()
+
+
+```
