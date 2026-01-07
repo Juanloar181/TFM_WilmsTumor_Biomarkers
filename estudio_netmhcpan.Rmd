@@ -4,10 +4,6 @@ author: "Juan López Ariza"
 date: "`r Sys.Date()`"
 output:
   html_document:
-    toc: true
-    df_print: paged
-  word_document:
-    toc: true
 ---
 
 ```{r setup, include=TRUE}
@@ -21,7 +17,6 @@ library(ggplot2)
 
 
 #LECTURA DE FICHEROS
-#Se asume que los archivos están en data/
 fichero_mt <- read_excel("data/mut_NetMHCpan.xlsx", col_names = FALSE)
 
 #FUNCIÓN DE LIMPIEZA DE DATOS

@@ -3,10 +3,7 @@ title: "Análisis Descriptivo: Cohorte Tumor de Wilms"
 author: "Juan López Ariza"
 date: "`r Sys.Date()`"
 output:
-  word_document:
-    toc: true
   html_document:
-    df_print: paged
 ---
 
 ```{r setup, include=TRUE}
@@ -65,14 +62,6 @@ ggplot(data_clean, aes(x = diagnosis_age)) +
   )
 
 
-#Tabla de contingencia cruzada sexo y raza
-data_clean %>% 
-  tabyl(sex, race_category) %>% 
-  adorn_totals(where = c("row", "col")) %>% 
-  adorn_percentages("all") %>%
-  adorn_pct_formatting(digits = 1) %>%
-  adorn_ns() %>% 
-  knitr::kable(caption = "Tabla Cruzada: Sexo vs Categoría Racial")
 
 #Análisis de TMB
 stats_tmb <- data_clean %>%
@@ -93,14 +82,9 @@ ggplot(data_clean, aes(x = tmb_nonsynonymous)) +
     x = "TMB (nonsynonymous)"
   )
 
-#Tabla de frecuencias para el estadio AJCC
-data_clean %>%
-  tabyl(stage) %>%
-  adorn_pct_formatting(digits = 1) %>%
-  knitr::kable(caption = "Distribución según Estadio AJCC")
 
 #Tabla resumen clínico-patológica
-# Definición de etiquetas para la tabla final
+#Definición de etiquetas para la tabla final
 mis_etiquetas <- list(
   diagnosis_age = "Edad al diagnóstico (años)",
   sex = "Sexo",
@@ -114,7 +98,7 @@ mis_etiquetas <- list(
   race_category = "Raza"
 )
 
-# Configuración de la tabla descriptiva con 'arsenal'
+#Configuración de la tabla descriptiva con 'arsenal'
 tabla_descriptiva <- tableby(
   ~ diagnosis_age + sex + race_category + stage + histology + 
     mutation_count + tmb_nonsynonymous + overall_survival_months,
@@ -126,6 +110,6 @@ tabla_descriptiva <- tableby(
 
 tabla_descriptiva
 
-# Generación del output de la tabla
+#Generación del output de la tabla
 summary(tabla_descriptiva, labelTranslations = mis_etiquetas, title = "Tabla 1. Características de la Cohorte")
 ```

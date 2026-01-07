@@ -12,7 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 Estudios estadísticos:
-
 ```{r, warning=FALSE}
 #CARGA DE LIBRERÍAS
 library(car)
@@ -24,7 +23,6 @@ library(ggpubr)
 
 #Carga fichero
 read.csv("data/tabla_completa_clinica_neoantigenos.csv") -> pacientes_con_neoantigenos
-
 
 #Creamos lista de las variables numéricas
 variables_numericas <- c(
@@ -55,7 +53,6 @@ for (var in variables_numericas) {
   ))
 }
 
-
 print(resultados_normalidad)
 
 
@@ -66,7 +63,7 @@ variable_grupo <- "Overall.Survival.Status"
 resultados_homocedasticidad <- data.frame()
 
 for (var in variables_numericas) {
-  # Test de Levene
+  #Test de Levene
   levene_test <- leveneTest(pacientes_con_neoantigenos[[var]], 
                              pacientes_con_neoantigenos[[variable_grupo]])
   
@@ -163,13 +160,13 @@ summary(tabla_categoricas, text = TRUE)
 
 #Gráfica de barras para las variables categóricas que resultaron significativas 
 
-# Calcular chi-cuadrado
+#Calcular chi-cuadrado
 contingency_table <- table(pacientes_con_neoantigenos$Histology.Classification.in.Primary.Tumor,
                            pacientes_con_neoantigenos$tiene_datos_neoant)
 chi_test <- chisq.test(contingency_table)
 p_value <- chi_test$p.value
 
-# Gráfica con p-valor
+#Gráfica con p-valor
 ggplot(pacientes_con_neoantigenos, 
        aes(x = Histology.Classification.in.Primary.Tumor, 
            fill = tiene_datos_neoant)) +
@@ -256,13 +253,8 @@ ggplot(pacientes_con_neoantigenos, aes(x = tiene_datos_neoant, y = Diagnosis.Age
   stat_compare_means(method = "wilcox.test", label.y = max(pacientes_con_neoantigenos$Diagnosis.Age) + 5)
 
 #Estudio de Histología según presencia de neoantígenos
-# Calculo de test chi-cuadrado antes de graficar
-chi_test <- chisq.test(
-  pacientes_con_neoantigenos$Histology.Classification.in.Primary.Tumor,
-  pacientes_con_neoantigenos$tiene_datos_neoant
-)
 
-
+#Gráfico de barras
 ggplot(pacientes_con_neoantigenos, 
        aes(x = Histology.Classification.in.Primary.Tumor, 
            fill = tiene_datos_neoant)) +
@@ -301,19 +293,14 @@ surv_object <- Surv(
 
 
 #DETERMINACIÓN DEL PUNTO DE CORTE ÓPTIMO (surv_cutpoint)
-
-
-#Identificar el mejor punto de corte para variables continuas
-#Variables continuas de interés
-variables_continuas <- c("TMB..nonsynonymous.", "Mutation.Count", "Total_neoantigenos")
-
+#Identificar el mejor punto de corte para el número de neoantígenos
 #Prueba todos los valores posibles para encontrar el punto de corte óptimo
 #Encuentra el que maximiza diferencia entre grupos
 res_cutpoint <- surv_cutpoint(
   data = pacientes_con_neoantigenos,
   time = "Overall.Survival..Months.",
   event = "status_numeric",
-  variables = variables_continuas
+  variables = "Total_neoantigenos"
 )
 
 print("PUNTOS DE CORTE ÓPTIMOS")
@@ -481,7 +468,5 @@ resumen_final <- data.frame(
 )
 
 print(resumen_final)
-
-
 ```
 
